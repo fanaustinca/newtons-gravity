@@ -1,6 +1,7 @@
 import { Component, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GameStateService } from '../../game/game-state.service';
+import { AuthService } from '../../services/auth.service';
 
 @Component({
   selector: 'app-game-over',
@@ -46,9 +47,10 @@ import { GameStateService } from '../../game/game-state.service';
           </div>
         </div>
 
-        <button class="restart-btn" (click)="restart.emit()">
-          Try Again
-        </button>
+        <div class="action-row">
+          <button class="restart-btn" (click)="restart.emit()">Try Again</button>
+          <button class="menu-btn" (click)="exitToMenu.emit()">Main Menu</button>
+        </div>
       </div>
     </div>
   `,
@@ -144,11 +146,15 @@ import { GameStateService } from '../../game/game-state.service';
       color: rgba(220,200,180,0.85);
       border-color: rgba(200,160,40,0.25);
     }
+    .action-row {
+      display: flex; gap: 10px;
+    }
     .restart-btn {
+      flex: 1;
       background: linear-gradient(135deg, #8b2020 0%, #c04040 50%, #8b2020 100%);
       border: none;
       border-radius: 50px;
-      padding: 14px 48px;
+      padding: 14px 24px;
       font-size: 1.05rem;
       font-family: 'Georgia', serif;
       color: #f5e0e0;
@@ -161,9 +167,23 @@ import { GameStateService } from '../../game/game-state.service';
       transform: translateY(-2px);
       box-shadow: 0 8px 28px rgba(160,0,0,0.7);
     }
+    .menu-btn {
+      flex: 1;
+      background: transparent;
+      border: 1px solid rgba(200,160,40,.35);
+      border-radius: 50px;
+      padding: 14px 24px;
+      font-size: 1rem;
+      font-family: 'Georgia', serif;
+      color: rgba(200,185,140,.75);
+      cursor: pointer;
+      transition: all .18s;
+    }
+    .menu-btn:hover { border-color: rgba(200,160,40,.7); color: #f5e8c0; }
   `]
 })
 export class GameOverComponent {
-  @Output() restart = new EventEmitter<void>();
+  @Output() restart     = new EventEmitter<void>();
+  @Output() exitToMenu  = new EventEmitter<void>();
   readonly gs = inject(GameStateService);
 }

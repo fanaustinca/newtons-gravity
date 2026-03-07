@@ -46,7 +46,7 @@ type LoginTab = 'guest' | 'login' | 'register';
           <div class="form-area">
             <p class="hint">Create a permanent account to keep scores across sessions.</p>
             <input class="field" [(ngModel)]="username" placeholder="Username (min 2 chars)" autocomplete="username" />
-            <input class="field" [(ngModel)]="password" type="password" placeholder="Password (min 4 chars)" autocomplete="new-password" />
+            <input class="field" [(ngModel)]="password" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password" />
             @if (error()) { <div class="error">{{ error() }}</div> }
             <button class="primary-btn" [disabled]="loading()" (click)="doRegister()">
               {{ loading() ? 'Creating account…' : 'Create Account' }}

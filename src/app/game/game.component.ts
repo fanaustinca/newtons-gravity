@@ -8,6 +8,7 @@ import { EngineService } from './engine.service';
 import { GameStateService } from './game-state.service';
 import { AppStateService } from '../services/app-state.service';
 import { MultiplayerService } from '../services/multiplayer.service';
+import { AuthService } from '../services/auth.service';
 import { HudComponent } from '../ui/hud/hud.component';
 import { UpgradeComponent } from '../ui/upgrade/upgrade.component';
 import { GameOverComponent } from '../ui/game-over/game-over.component';
@@ -29,13 +30,16 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
           <app-upgrade (nextWave)="onNextWave()" />
         }
         @if (gameState.status() === 'dead') {
-          <app-game-over (restart)="onRestart()" />
+          <app-game-over (restart)="onRestart()" (exitToMenu)="exitToMenu.emit()" />
         }
         @if (isMulti && gameState.status() === 'playing') {
           <app-scoreboard />
         }
         @if (isMulti) {
           <button class="disconnect-btn" (click)="onDisconnect()">✕ Leave Game</button>
+        }
+        @if (!isMulti && gameState.status() === 'playing') {
+          <button class="disconnect-btn" (click)="exitToMenu.emit()">✕ Leave Game</button>
         }
       </div>
 
@@ -128,6 +132,7 @@ export class GameComponent implements AfterViewInit, OnDestroy {
   private readonly engine    = inject(EngineService);
   private readonly appState  = inject(AppStateService);
   private readonly mp        = inject(MultiplayerService);
+  private readonly auth      = inject(AuthService);
   private readonly ngZone    = inject(NgZone);
 
   readonly pointerLocked = signal(false);
@@ -158,6 +163,14 @@ export class GameComponent implements AfterViewInit, OnDestroy {
     effect(() => {
       if (this.gameState.status() !== 'playing' && this.pointerLocked()) {
         document.exitPointerLock();
+      }
+    });
+
+    // Report solo score to server when player dies (registered users only)
+    effect(() => {
+      if (this.gameState.status() === 'dead' && !this.isMulti) {
+        const iq = this.gameState.totalIqEarned();
+        if (iq > 0) this.auth.reportSoloScore(iq);
       }
     });
   }

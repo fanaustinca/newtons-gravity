@@ -15,6 +15,7 @@ interface User {
   passwordHash: string | null;
   isAnonymous: boolean;
   socketId?: string;
+  totalIq: number;
 }
 
 interface UpgradeState {
@@ -117,14 +118,14 @@ app.use(express.static(staticPath));
 // REST: register permanent account
 app.post('/api/auth/register', async (req, res) => {
   const { username, password } = req.body as { username: string; password: string };
-  if (!username || !password || username.length < 2 || password.length < 4) {
-    return res.status(400).json({ error: 'Username ≥ 2 chars, password ≥ 4 chars required.' });
+  if (!username || !password || username.length < 2 || password.length < 6) {
+    return res.status(400).json({ error: 'Username ≥ 2 chars, password ≥ 6 chars required.' });
   }
   const taken = [...users.values()].find(u => u.username.toLowerCase() === username.toLowerCase() && !u.isAnonymous);
   if (taken) return res.status(409).json({ error: 'Username already taken.' });
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const user: User = { id: uuid(), username, passwordHash, isAnonymous: false };
+  const user: User = { id: uuid(), username, passwordHash, isAnonymous: false, totalIq: 0 };
   users.set(user.id, user);
   return res.json({ token: signToken(user.id), user: { id: user.id, username, isAnonymous: false } });
 });
@@ -137,6 +138,30 @@ app.post('/api/auth/login', async (req, res) => {
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: 'Invalid credentials.' });
   return res.json({ token: signToken(user.id), user: { id: user.id, username: user.username, isAnonymous: false } });
+});
+
+// REST: leaderboard (public)
+app.get('/api/leaderboard', (_req, res) => {
+  const top = [...users.values()]
+    .filter(u => !u.isAnonymous && u.totalIq > 0)
+    .sort((a, b) => b.totalIq - a.totalIq)
+    .slice(0, 10)
+    .map(u => ({ username: u.username, totalIq: u.totalIq }));
+  res.json(top);
+});
+
+// REST: report solo score (registered users only)
+app.post('/api/score/report', (req, res) => {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized.' });
+  const payload = verifyToken(auth.slice(7));
+  if (!payload) return res.status(401).json({ error: 'Invalid token.' });
+  const user = users.get(payload.userId);
+  if (!user || user.isAnonymous) return res.status(403).json({ error: 'Registered users only.' });
+  const { iq } = req.body as { iq: number };
+  if (typeof iq !== 'number' || iq < 0) return res.status(400).json({ error: 'Invalid IQ.' });
+  user.totalIq += iq;
+  return res.json({ totalIq: user.totalIq });
 });
 
 // SPA fallback
@@ -173,7 +198,7 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('auth:anonymous', ({ name }: { name: string }) => {
     const safeName = (name || 'Newton').slice(0, 20).replace(/[<>&]/g, '');
-    const user: User = { id: uuid(), username: safeName, passwordHash: null, isAnonymous: true, socketId: socket.id };
+    const user: User = { id: uuid(), username: safeName, passwordHash: null, isAnonymous: true, socketId: socket.id, totalIq: 0 };
     users.set(user.id, user);
     socketUserMap.set(socket.id, user.id);
     socket.emit('auth:ok', { token: signToken(user.id), user: { id: user.id, username: user.username, isAnonymous: true } });

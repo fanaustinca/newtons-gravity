@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, inject } from '@angular/core';
+import { Component, Output, EventEmitter, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../services/auth.service';
 
@@ -38,6 +38,20 @@ import { AuthService } from '../../services/auth.service';
         <div class="controls-hint">
           <span>🖱️ Click to lock camera &nbsp;·&nbsp; WASD / ↑↓←→ to move</span>
         </div>
+
+        <div class="leaderboard">
+          <div class="lb-title">🏆 Leaderboard</div>
+          @if (leaderboard().length === 0) {
+            <div class="lb-empty">No scores yet. Be the first!</div>
+          }
+          @for (entry of leaderboard(); track entry.username; let i = $index) {
+            <div class="lb-row">
+              <span class="lb-rank">#{{ i + 1 }}</span>
+              <span class="lb-name">{{ entry.username }}</span>
+              <span class="lb-iq">{{ entry.totalIq }} IQ</span>
+            </div>
+          }
+        </div>
       </div>
     </div>
   `,
@@ -70,12 +84,25 @@ import { AuthService } from '../../services/auth.service';
     .mode-icon { font-size: 1.8rem; flex-shrink: 0; }
     .mode-label { display: block; font-size: 1rem; font-weight: bold; color: #f0e0c0; margin-bottom: 2px; }
     .mode-desc { display: block; font-size: .72rem; color: rgba(200,185,140,.6); font-style: italic; }
-    .controls-hint { font-size: .68rem; color: rgba(200,185,140,.4); }
+    .controls-hint { font-size: .68rem; color: rgba(200,185,140,.4); margin-bottom: 18px; }
+    .leaderboard { border-top: 1px solid rgba(200,160,40,.15); padding-top: 14px; }
+    .lb-title { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: #c9a227; margin-bottom: 8px; }
+    .lb-empty { font-size: .75rem; color: rgba(200,185,140,.4); font-style: italic; }
+    .lb-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+    .lb-row:last-child { border-bottom: none; }
+    .lb-rank { width: 24px; font-size: .72rem; color: rgba(200,185,140,.5); text-align: right; flex-shrink: 0; }
+    .lb-name { flex: 1; font-size: .82rem; color: #f0e0c0; text-align: left; }
+    .lb-iq { font-size: .82rem; color: #f5c842; font-family: 'Georgia',serif; }
   `]
 })
-export class MainMenuComponent {
+export class MainMenuComponent implements OnInit {
   @Output() playSolo  = new EventEmitter<void>();
   @Output() playMulti = new EventEmitter<void>();
 
   readonly auth = inject(AuthService);
+  readonly leaderboard = signal<{ username: string; totalIq: number }[]>([]);
+
+  ngOnInit(): void {
+    this.auth.fetchLeaderboard().then(data => this.leaderboard.set(data));
+  }
 }

@@ -92,4 +92,22 @@ export class AuthService {
   setGuestUser(name: string): void {
     this.user.set({ id: `guest-${Date.now()}`, username: name || 'Newton', isAnonymous: true, token: '' });
   }
+
+  /** Report IQ earned in a solo game (registered users only) */
+  async reportSoloScore(iq: number): Promise<void> {
+    const token = this.user()?.token;
+    if (!token || this.user()?.isAnonymous) return;
+    await fetch(`${SERVER()}/api/score/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ iq }),
+    });
+  }
+
+  /** Fetch top 10 leaderboard entries */
+  async fetchLeaderboard(): Promise<{ username: string; totalIq: number }[]> {
+    const res = await fetch(`${SERVER()}/api/leaderboard`);
+    if (!res.ok) return [];
+    return res.json();
+  }
 }
