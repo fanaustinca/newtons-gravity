@@ -36,7 +36,10 @@ type LobbyTab = 'browse' | 'create' | 'room';
               @for (room of mp.availableRooms(); track room.id) {
                 <div class="room-row">
                   <div class="room-info">
-                    <span class="room-name">{{ room.name }}</span>
+                    <span class="room-name">
+                      {{ room.name }}
+                      @if (room.inProgress) { <span class="in-progress-tag">Wave {{ room.wave }}/20</span> }
+                    </span>
                     <span class="room-meta">Host: {{ room.hostName }} · {{ room.playerCount }}/8 players</span>
                   </div>
                   <button class="join-btn" (click)="join(room.id)">Join</button>
@@ -83,12 +86,14 @@ type LobbyTab = 'browse' | 'create' | 'room';
             @if (room.players.length >= 8) {
               <p class="waiting-hint auto-start">Starting automatically…</p>
             } @else if (mp.isHost()) {
-              <button class="primary-btn" (click)="startGame()">
+              <button class="primary-btn"
+                      [disabled]="room.players.length < 2"
+                      (click)="startGame()">
                 Start Game ({{ room.players.length }}/8)
               </button>
-              <p class="waiting-hint">Game auto-starts at 8 players</p>
+              <p class="waiting-hint">Need 2+ players · auto-starts at 8</p>
             } @else {
-              <p class="waiting-hint">Waiting for host to start… ({{ room.players.length }}/8)</p>
+              <p class="waiting-hint">Waiting for host… ({{ room.players.length }}/8)</p>
             }
             <button class="secondary-btn" (click)="leaveRoom()">Leave Room</button>
           </div>
@@ -131,7 +136,8 @@ type LobbyTab = 'browse' | 'create' | 'room';
       background: rgba(0,0,0,.3); border: 1px solid rgba(200,160,40,.15); border-radius: 10px; padding: 12px 16px;
     }
     .room-info { flex: 1; }
-    .room-name { display: block; font-size: .92rem; color: #f0e0c0; }
+    .room-name { display: block; font-size: .92rem; color: #f0e0c0; display: flex; align-items: center; gap: 8px; }
+    .in-progress-tag { font-size: .62rem; background: rgba(200,120,0,.25); color: #ffa040; border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
     .room-meta { display: block; font-size: .7rem; color: rgba(200,185,140,.55); margin-top: 2px; }
     .join-btn {
       background: linear-gradient(135deg,#b8860b,#c9a227); border: none; border-radius: 8px;
@@ -210,7 +216,7 @@ export class LobbyComponent implements OnInit, OnDestroy {
     // Auto-start when room reaches 8 players (host triggers it)
     this.autoStartTimer = setInterval(() => {
       const room = this.mp.currentRoom();
-      if (room && room.players.length >= 8 && this.mp.isHost()) {
+      if (room && room.players.length >= 8 && room.status === 'waiting' && this.mp.isHost()) {
         this.startGame();
       }
     }, 500);

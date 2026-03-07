@@ -7,6 +7,8 @@ export interface RoomInfo {
   name: string;
   playerCount: number;
   hostName: string;
+  inProgress: boolean;
+  wave: number;
 }
 
 export interface RemotePlayerInfo {
@@ -69,6 +71,7 @@ export class MultiplayerService {
   readonly waveStart$     = new Subject<{ wave: number }>();
   readonly waveEnd$       = new Subject<WaveScore[]>();
   readonly scoreUpdate$   = new Subject<{ socketId: string; iq: number }>();
+  readonly gameEnded$     = new Subject<WaveScore[]>();
 
   // ── Connection ─────────────────────────────────────────────────────────
 
@@ -153,6 +156,11 @@ export class MultiplayerService {
       this.waveScores.set(data.scores);
       this.currentRoom.update(r => r ? ({ ...r, status: 'upgrade' }) : r);
       this.waveEnd$.next(data.scores);
+    });
+
+    this.socket.on('game:ended', (data: { scores: WaveScore[] }) => {
+      this.currentRoom.update(r => r ? ({ ...r, status: 'ended' }) : r);
+      this.gameEnded$.next(data.scores);
     });
 
     this.socket.on('error', (msg: string) => console.warn('[mp] error:', msg));

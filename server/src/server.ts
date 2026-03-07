@@ -67,7 +67,10 @@ const PORT       = parseInt(process.env['PORT'] || '3000', 10);
 const WAVE_DURATION_MS = 35_000;
 const BASE_SPAWN_MS    = 1_800;
 const MIN_SPAWN_MS     = 550;
-const WAVE_DELAY_MS    = 30_000; // max wait for upgrade screen
+const WAVE_DELAY_MS    = 15_000; // max wait for upgrade screen (matches client countdown)
+const MAX_WAVES        = 20;
+const MAX_PLAYERS      = 8;
+const MIN_PLAYERS      = 2;
 
 // ── In-memory stores ───────────────────────────────────────────────────────
 
@@ -190,11 +193,13 @@ io.on('connection', (socket: Socket) => {
 
   socket.on('room:list', () => {
     const list = [...rooms.values()]
-      .filter(r => r.status === 'waiting')
+      .filter(r => r.status !== 'ended' && r.players.size < MAX_PLAYERS)
       .map(r => ({
         id: r.id, name: r.name,
         playerCount: r.players.size,
         hostName: r.players.get(r.hostSocketId)?.username ?? '?',
+        inProgress: r.status !== 'waiting',
+        wave: r.wave,
       }));
     socket.emit('room:list', list);
   });
@@ -231,8 +236,8 @@ io.on('connection', (socket: Socket) => {
 
     const room = rooms.get(roomId);
     if (!room) return socket.emit('room:error', 'Room not found.');
-    if (room.status !== 'waiting') return socket.emit('room:error', 'Game already in progress.');
-    if (room.players.size >= 8) return socket.emit('room:error', 'Room is full.');
+    if (room.status === 'ended') return socket.emit('room:error', 'Game has ended.');
+    if (room.players.size >= MAX_PLAYERS) return socket.emit('room:error', 'Room is full.');
 
     const colorIdx = room.players.size;
     const player: RoomPlayer = {
@@ -257,6 +262,7 @@ io.on('connection', (socket: Socket) => {
     const room = findPlayerRoom(socket.id);
     if (!room || room.hostSocketId !== socket.id) return;
     if (room.status !== 'waiting') return;
+    if (room.players.size < MIN_PLAYERS) return socket.emit('room:error', `Need at least ${MIN_PLAYERS} players to start.`);
     startWave(room, io);
   });
 
@@ -413,6 +419,15 @@ function endWave(room: Room, srv: Server): void {
 }
 
 function advanceWave(room: Room, srv: Server): void {
+  if (room.wave >= MAX_WAVES) {
+    room.status = 'ended';
+    clearRoomTimers(room);
+    const scores = [...room.players.values()]
+      .map(p => ({ socketId: p.socketId, username: p.username, iq: p.iq }))
+      .sort((a, b) => b.iq - a.iq);
+    srv.to(room.id).emit('game:ended', { scores });
+    return;
+  }
   room.wave++;
   startWave(room, srv);
 }

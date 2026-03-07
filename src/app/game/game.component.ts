@@ -34,6 +34,9 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
         @if (isMulti && gameState.status() === 'playing') {
           <app-scoreboard />
         }
+        @if (isMulti) {
+          <button class="disconnect-btn" (click)="onDisconnect()">✕ Leave Game</button>
+        }
       </div>
 
       <!-- "Click to look" overlay -->
@@ -77,6 +80,13 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
       position: absolute; inset: 0; pointer-events: none;
     }
     .ui-layer > * { pointer-events: auto; }
+    .disconnect-btn {
+      position: absolute; top: 14px; right: 14px;
+      background: rgba(180,30,30,.75); border: 1px solid rgba(255,80,80,.4);
+      border-radius: 8px; padding: 6px 14px; color: #ffd0d0;
+      font-size: .75rem; cursor: pointer; transition: background .18s;
+    }
+    .disconnect-btn:hover { background: rgba(200,40,40,.95); }
     .click-overlay {
       position: absolute; inset: 0; display: flex; align-items: center;
       justify-content: center; background: rgba(0,0,0,0.45);
@@ -242,6 +252,11 @@ export class GameComponent implements AfterViewInit, OnDestroy {
       }
     }));
 
+    // Game ended after wave 20
+    this.subs.add(this.mp.gameEnded$.subscribe(() => {
+      this.ngZone.run(() => this.exitToMenu.emit());
+    }));
+
     // Throttled position sync ~10Hz
     this.positionSyncTimer = setInterval(() => {
       const state = this.engine.getPlayerState();
@@ -311,6 +326,12 @@ export class GameComponent implements AfterViewInit, OnDestroy {
     } else {
       this.gameState.startNextWave();
     }
+  }
+
+  onDisconnect(): void {
+    this.mp.leaveRoom();
+    this.mp.disconnect();
+    this.exitToMenu.emit();
   }
 
   onRestart(): void {
