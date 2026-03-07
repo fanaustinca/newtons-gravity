@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuid } from 'uuid';
 import path from 'path';
+import * as admin from 'firebase-admin';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -73,11 +74,28 @@ const MAX_WAVES        = 20;
 const MAX_PLAYERS      = 8;
 const MIN_PLAYERS      = 2;
 
+// ── Firestore ──────────────────────────────────────────────────────────────
+
+admin.initializeApp();
+const db = admin.firestore();
+
 // ── In-memory stores ───────────────────────────────────────────────────────
 
-const users = new Map<string, User>();          // key = userId
+const users = new Map<string, User>();          // key = userId (registered users loaded from Firestore + anonymous)
 const rooms = new Map<string, Room>();          // key = roomId
 const socketUserMap = new Map<string, string>(); // socketId → userId
+
+/** Load all registered users from Firestore into memory on startup */
+async function loadRegisteredUsers(): Promise<void> {
+  const snapshot = await db.collection('users').where('isAnonymous', '==', false).get();
+  snapshot.forEach(doc => {
+    const d = doc.data() as Omit<User, 'id'>;
+    users.set(doc.id, { ...d, id: doc.id });
+  });
+  console.log(`[firestore] Loaded ${snapshot.size} registered users`);
+}
+
+loadRegisteredUsers().catch(err => console.error('[firestore] load error:', err));
 
 // ── Branch tips for server-side spawn positions ────────────────────────────
 
@@ -127,6 +145,7 @@ app.post('/api/auth/register', async (req, res) => {
   const passwordHash = await bcrypt.hash(password, 10);
   const user: User = { id: uuid(), username, passwordHash, isAnonymous: false, totalIq: 0 };
   users.set(user.id, user);
+  await db.collection('users').doc(user.id).set({ username, passwordHash, isAnonymous: false, totalIq: 0 });
   return res.json({ token: signToken(user.id), user: { id: user.id, username, isAnonymous: false } });
 });
 
@@ -151,7 +170,7 @@ app.get('/api/leaderboard', (_req, res) => {
 });
 
 // REST: report solo score (registered users only)
-app.post('/api/score/report', (req, res) => {
+app.post('/api/score/report', async (req, res) => {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized.' });
   const payload = verifyToken(auth.slice(7));
@@ -161,6 +180,7 @@ app.post('/api/score/report', (req, res) => {
   const { iq } = req.body as { iq: number };
   if (typeof iq !== 'number' || iq < 0) return res.status(400).json({ error: 'Invalid IQ.' });
   user.totalIq += iq;
+  await db.collection('users').doc(user.id).update({ totalIq: user.totalIq });
   return res.json({ totalIq: user.totalIq });
 });
 
