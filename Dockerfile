@@ -28,8 +28,10 @@ RUN npm ci --omit=dev
 # Copy compiled server
 COPY --from=srv-builder /srv/dist ./dist
 
-# Copy Angular build as static files (served by Express)
-COPY --from=ng-builder /app/dist/newton-game/browser ./public
+# Copy Angular build as static files served by Express
+# server.js lives at /app/dist/server.js → __dirname = /app/dist
+# path.join(__dirname, '../../public') resolves to /public
+COPY --from=ng-builder /app/dist/newton-game/browser /public
 
 ENV PORT=8080
 EXPOSE 8080
