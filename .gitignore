@@ -13,6 +13,10 @@ ios/
 .env
 .env.*
 
+# Angular environment files (contain secrets — use environment.example.ts as template)
+src/environments/environment.ts
+src/environments/environment.prod.ts
+
 # IDE
 .vscode/
 .idea/
