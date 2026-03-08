@@ -2,7 +2,8 @@ import { Injectable, signal } from '@angular/core';
 import {
   signInWithPopup, signInWithRedirect, getRedirectResult,
   GoogleAuthProvider, signInAnonymously,
-  signOut, onAuthStateChanged, User as FirebaseUser
+  signOut, onAuthStateChanged, User as FirebaseUser,
+  setPersistence, browserLocalPersistence
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
 
@@ -21,12 +22,17 @@ export class AuthService {
   readonly user = signal<AuthUser | null>(null);
 
   constructor() {
-    // Handle redirect result (mobile Google Sign-In)
-    getRedirectResult(firebaseAuth).then(async (result) => {
-      if (result?.user) {
-        await this.syncUser(result.user);
-      }
-    }).catch(() => { });
+    // Set persistence to LOCAL so sessions survive browser restarts (up to backend/Firebase token expiration limits)
+    setPersistence(firebaseAuth, browserLocalPersistence)
+      .then(() => {
+        // Handle redirect result (mobile Google Sign-In)
+        return getRedirectResult(firebaseAuth);
+      })
+      .then(async (result) => {
+        if (result?.user) {
+          await this.syncUser(result.user);
+        }
+      }).catch(() => { });
 
     // Restore session if Firebase still has a logged-in user
     onAuthStateChanged(firebaseAuth, async (fbUser) => {
