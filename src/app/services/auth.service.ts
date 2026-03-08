@@ -14,7 +14,7 @@ export interface AuthUser {
 }
 
 const SERVER = (): string =>
-  window.location.hostname === 'localhost' ? 'http://localhost:3000' : window.location.origin;
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:3000' : window.location.origin;
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -26,7 +26,7 @@ export class AuthService {
       if (result?.user) {
         await this.syncUser(result.user);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     // Restore session if Firebase still has a logged-in user
     onAuthStateChanged(firebaseAuth, async (fbUser) => {

@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "ng": "ng",
+    "prestart": "node scripts/set-env.js",
     "start": "ng serve",
+    "prebuild": "node scripts/set-env.js",
     "build": "ng build",
     "build:prod": "ng build --configuration production",
     "watch": "ng build --watch --configuration development",
@@ -38,7 +40,9 @@
     "@angular/cli": "^17.3.0",
     "@angular/compiler-cli": "^17.3.0",
     "@capacitor/cli": "^5.7.0",
+    "@google-cloud/secret-manager": "^6.1.1",
     "@types/three": "^0.163.0",
+    "dotenv": "^17.3.1",
     "typescript": "~5.4.2"
   }
 }
