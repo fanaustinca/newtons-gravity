@@ -17,8 +17,8 @@ async function getSecret() {
         const payload = version.payload.data.toString('utf8');
         return payload;
     } catch (err) {
-        console.warn('Skipping Secret Manager. Google Cloud Auth missing or failed:', err.message);
-        return 'AIzaSyBQ7uGtdC1VW4pGmj-qCflWvLMCLuqN8XA'; // Fallback for local dev if auth fails
+        console.error('Failed to fetch Secret Manager key. Google Cloud Auth missing or failed:', err.message);
+        throw err;
     }
 }
 
