@@ -129,6 +129,15 @@ function verifyToken(token: string): { userId: string } | null {
   }
 }
 
+/** Verify a Firebase ID token and return the decoded payload */
+async function verifyFirebaseToken(token: string): Promise<admin.auth.DecodedIdToken | null> {
+  try {
+    return await admin.auth().verifyIdToken(token);
+  } catch {
+    return null;
+  }
+}
+
 // ── Express app ────────────────────────────────────────────────────────────
 
 const app = express();
@@ -141,7 +150,25 @@ app.use(express.json());
 const staticPath = path.join(__dirname, '../../public');
 app.use(express.static(staticPath));
 
-// REST: register permanent account
+// REST: Google sign-in — create/update user record from Firebase token
+app.post('/api/auth/google', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized.' });
+  const decoded = await verifyFirebaseToken(authHeader.slice(7));
+  if (!decoded) return res.status(401).json({ error: 'Invalid Firebase token.' });
+
+  let user = users.get(decoded.uid);
+  if (!user) {
+    // First time — create user record
+    const username = (decoded.name || decoded.email?.split('@')[0] || 'Player').slice(0, 20);
+    user = { id: decoded.uid, username, passwordHash: null, isAnonymous: false, totalIq: 0 };
+    users.set(user.id, user);
+    await db.collection('users').doc(user.id).set({ username, passwordHash: null, isAnonymous: false, totalIq: 0 });
+  }
+  return res.json({ user: { id: user.id, username: user.username, isAnonymous: false } });
+});
+
+// REST: register permanent account (legacy — kept for compatibility)
 app.post('/api/auth/register', async (req, res) => {
   const { username, password } = req.body as { username: string; password: string };
   if (!username || !password || username.length < 2 || password.length < 6) {
@@ -179,11 +206,13 @@ app.get('/api/leaderboard', (_req, res) => {
 
 // REST: report solo score (registered users only)
 app.post('/api/score/report', async (req, res) => {
-  const auth = req.headers.authorization;
-  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized.' });
-  const payload = verifyToken(auth.slice(7));
-  if (!payload) return res.status(401).json({ error: 'Invalid token.' });
-  const user = users.get(payload.userId);
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized.' });
+  // Accept both Firebase tokens and legacy JWTs
+  const decoded = await verifyFirebaseToken(authHeader.slice(7));
+  const userId = decoded ? decoded.uid : verifyToken(authHeader.slice(7))?.userId;
+  if (!userId) return res.status(401).json({ error: 'Invalid token.' });
+  const user = users.get(userId);
   if (!user || user.isAnonymous) return res.status(403).json({ error: 'Registered users only.' });
   const { iq } = req.body as { iq: number };
   if (typeof iq !== 'number' || iq < 0) return res.status(400).json({ error: 'Invalid IQ.' });
@@ -206,9 +235,15 @@ const io = new Server(httpServer, {
   transports: ['websocket', 'polling'],
 });
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth['token'] as string | undefined;
   if (token) {
+    // Try Firebase token first, then legacy JWT
+    const decoded = await verifyFirebaseToken(token);
+    if (decoded) {
+      socketUserMap.set(socket.id, decoded.uid);
+      return next();
+    }
     const payload = verifyToken(token);
     if (payload) {
       socketUserMap.set(socket.id, payload.userId);

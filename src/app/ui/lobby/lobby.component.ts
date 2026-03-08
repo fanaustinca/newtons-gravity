@@ -207,7 +207,7 @@ export class LobbyComponent implements OnInit, OnDestroy {
     const user = this.auth.user();
     if (!user) return;
 
-    this.mp.connect(user.token);
+    this.auth.getToken().then(token => this.mp.connect(token));
 
     this.subs.add(
       this.mp.waveStart$.subscribe(() => this.gameReady.emit())

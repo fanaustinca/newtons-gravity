@@ -32,9 +32,11 @@ export class AppComponent implements OnInit {
   private readonly auth   = inject(AuthService);
 
   ngOnInit(): void {
-    if (this.auth.tryRestoreSession()) {
-      this.appState.goToMainMenu();
-    }
+    // Firebase onAuthStateChanged in AuthService handles session restore
+    // Check if already signed in after a brief tick
+    setTimeout(() => {
+      if (this.auth.user()) this.appState.goToMainMenu();
+    }, 500);
   }
 
   onLoginDone(): void {
