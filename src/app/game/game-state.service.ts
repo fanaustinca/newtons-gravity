@@ -93,7 +93,8 @@ export class GameStateService {
   readonly sprintOnCooldown = this._sprintOnCooldown.asReadonly();
 
   readonly healthPercent = computed(() => this._health() / this._maxHealth());
-  readonly iqPerApple = computed(() => 10 * (1 + this._upgrades().iqMultiplierLevel * 0.5));
+  readonly iqPerApple      = computed(() => 10 * (1 + this._upgrades().iqMultiplierLevel * 0.5));
+  readonly iqPerSuperApple = computed(() => 50 * (1 + this._upgrades().iqMultiplierLevel * 0.5));
   readonly moveSpeedMultiplier = computed(() => 1 + this._upgrades().speedLevel * 0.25);
   readonly magnetRadius = computed(() => {
     const level = this._upgrades().magnetLevel;
@@ -130,6 +131,20 @@ export class GameStateService {
   collectApple(): void {
     const gained = this.iqPerApple();
     this._iq.update(v => v + gained);
+    this._totalIqEarned.update(v => v + gained);
+    this._waveIqEarned.update(v => v + gained);
+  }
+
+  collectSuperApple(): void {
+    const gained = this.iqPerSuperApple();
+    this._iq.update(v => v + gained);
+    this._totalIqEarned.update(v => v + gained);
+    this._waveIqEarned.update(v => v + gained);
+  }
+
+  doubleIq(): void {
+    const gained = this._iq(); // amount gained = current value (it doubles)
+    this._iq.update(v => v * 2);
     this._totalIqEarned.update(v => v + gained);
     this._waveIqEarned.update(v => v + gained);
   }

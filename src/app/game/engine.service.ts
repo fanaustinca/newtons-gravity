@@ -16,7 +16,7 @@ const BRANCH_TIPS_LOCAL: [number, number, number][] = [
 export interface FallingObject {
   id: string;
   mesh: THREE.Group;
-  type: 'apple' | 'anvil';
+  type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple';
   speed: number;
   checked: boolean;
   network: boolean; // true = came from server
@@ -37,7 +37,7 @@ interface RemotePlayer {
 // Emitted when Newton catches/is-hit-by an object (so multiplayer service can forward to server)
 export interface CatchEvent {
   objectId: string;
-  type: 'apple' | 'anvil';
+  type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple';
   newIq: number;
 }
 
@@ -53,6 +53,7 @@ export class EngineService implements OnDestroy {
 
   private newtonGroup!: THREE.Group;
   private treeGroup!: THREE.Group;
+  private trees: THREE.Group[] = [];
   private fallingObjects: FallingObject[] = [];
   private particles: Particle[] = [];
   private remotePlayers = new Map<string, RemotePlayer>();
@@ -63,6 +64,10 @@ export class EngineService implements OnDestroy {
   private newtonLeftArm!: THREE.Mesh;
   private newtonRightArm!: THREE.Mesh;
   private newtonBody!: THREE.Mesh;
+  private newtonHeadMesh!: THREE.Mesh;
+  private newtonWigMesh!: THREE.Mesh;
+  private newtonHatBrim!: THREE.Mesh;
+  private newtonHatCrown!: THREE.Mesh;
 
   // Player state — 2D movement XZ + jump
   private playerX = 0;
@@ -80,8 +85,12 @@ export class EngineService implements OnDestroy {
   private readonly GRAVITY = 22;
   private readonly JUMP_FORCE = 9;
 
-  // Trunk collision radius (world space, set from treeScale in init)
-  private trunkRadius = 1.5;
+  // Trunk collision radii per trunk (world space)
+  private trunkPositions: { x: number; z: number; r: number }[] = [];
+
+  // Power-up timers
+  private speedBoostTimer = 0;
+  private bigHeadTimer    = 0;
 
   // Sprint
   private sprintStaminaVal = 1.0;
@@ -124,6 +133,8 @@ export class EngineService implements OnDestroy {
     foliageLight: new THREE.MeshLambertMaterial({ color: 0x2a7a2a }),
     appleRed:     new THREE.MeshLambertMaterial({ color: 0xcc1111 }),
     appleGreen:   new THREE.MeshLambertMaterial({ color: 0x3a9c3a }),
+    superApple:   new THREE.MeshLambertMaterial({ color: 0xff5500 }),
+    goldenApple:  new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 }),
     stem:         new THREE.MeshLambertMaterial({ color: 0x4a2c0a }),
     anvilDark:    new THREE.MeshLambertMaterial({ color: 0x333333 }),
     anvilMid:     new THREE.MeshLambertMaterial({ color: 0x4a4a4a }),
@@ -149,23 +160,38 @@ export class EngineService implements OnDestroy {
     this.setupCamera(canvas);
     this.setupScene();
     this.setupLights();
-    this.buildEnvironment();
-    this.treeGroup = this.buildTree();
-    this.treeGroup.position.set(0, 0, -2);
-    const treeScale = multiplayer ? 2.8 : 1.6;
-    this.treeGroup.scale.setScalar(treeScale);
-    this.trunkRadius = 1.25 * treeScale;
-    this.scene.add(this.treeGroup);
+    this.buildEnvironment(multiplayer);
 
-    // Compute branch tips and player bounds from tree scale
-    this.branchTips = BRANCH_TIPS_LOCAL.map(
-      ([lx, ly, lz]) => new THREE.Vector3(lx * treeScale, ly * treeScale, lz * treeScale - 2)
-    );
+    this.trees = [];
+    this.trunkPositions = [];
+    this.branchTips = [];
+
+    const treeScale = multiplayer ? 2.0 : 1.6;
+    const treeOffsets: [number, number][] = multiplayer
+      ? [[0, -2], [-50, -2], [50, -2]]
+      : [[0, -2]];
+
+    treeOffsets.forEach(([tx, tz]) => {
+      const t = this.buildTree();
+      t.position.set(tx, 0, tz);
+      t.scale.setScalar(treeScale);
+      this.scene.add(t);
+      this.trees.push(t);
+      this.trunkPositions.push({ x: tx, z: tz, r: 1.25 * treeScale });
+      BRANCH_TIPS_LOCAL.forEach(([lx, ly, lz]) =>
+        this.branchTips.push(new THREE.Vector3(lx * treeScale + tx, ly * treeScale, lz * treeScale + tz))
+      );
+    });
+
+    this.treeGroup = this.trees[0];
+
     const pad = 6;
-    this.PLAYER_MIN_X = -10.5 * treeScale - pad;
-    this.PLAYER_MAX_X =  10.5 * treeScale + pad;
-    this.PLAYER_MIN_Z = -4.5  * treeScale - 2 - pad;
-    this.PLAYER_MAX_Z =  1.0  * treeScale - 2 + pad + 10;
+    const xSpread = multiplayer ? 50 + 10.5 * treeScale : 10.5 * treeScale;
+    this.PLAYER_MIN_X = -xSpread - pad;
+    this.PLAYER_MAX_X =  xSpread + pad;
+    this.PLAYER_MIN_Z = -4.5 * treeScale - 2 - pad;
+    this.PLAYER_MAX_Z =  1.0 * treeScale - 2 + pad + 10;
+
     this.newtonGroup = this.buildNewton(this.MAT.coat);
     this.newtonGroup.position.set(this.playerX, 0, this.playerZ);
     this.newtonGroup.rotation.y = Math.PI;
@@ -228,6 +254,9 @@ export class EngineService implements OnDestroy {
     this.isGrounded = true;
     this.sprintStaminaVal = 1.0;
     this.sprintCooldownActive = false;
+    this.speedBoostTimer = 0;
+    this.bigHeadTimer = 0;
+    this.applyHeadScale(1.0);
     this.fallingObjects.forEach(o => this.scene.remove(o.mesh));
     this.fallingObjects = [];
   }
@@ -236,8 +265,11 @@ export class EngineService implements OnDestroy {
 
   // ── Multiplayer object API ─────────────────────────────────────────────
 
-  addNetworkObject(id: string, type: 'apple' | 'anvil', x: number, y: number, z: number, speed: number): void {
-    const mesh = type === 'apple' ? this.makeAppleMesh() : this.makeAnvilMesh();
+  addNetworkObject(id: string, type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple', x: number, y: number, z: number, speed: number): void {
+    const mesh = type === 'anvil' ? this.makeAnvilMesh()
+               : type === 'super-apple' ? this.makeSuperAppleMesh()
+               : type === 'golden-apple' ? this.makeGoldenAppleMesh()
+               : this.makeAppleMesh();
     mesh.position.set(x, y, z);
     mesh.rotation.set((Math.random()-0.5)*0.4, Math.random()*Math.PI*2, (Math.random()-0.5)*0.4);
     this.scene.add(mesh);
@@ -321,12 +353,13 @@ export class EngineService implements OnDestroy {
     this.scene.add(fillLight);
   }
 
-  private buildEnvironment(): void {
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), this.MAT.ground);
+  private buildEnvironment(multiplayer = false): void {
+    const gSize = multiplayer ? 250 : 120;
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(gSize, gSize), this.MAT.ground);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.scene.add(ground);
-    const groundEdge = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), this.MAT.groundEdge);
+    const groundEdge = new THREE.Mesh(new THREE.PlaneGeometry(gSize, gSize), this.MAT.groundEdge);
     groundEdge.rotation.x = -Math.PI / 2;
     groundEdge.position.set(0, -0.01, 0);
     this.scene.add(groundEdge);
@@ -481,6 +514,7 @@ export class EngineService implements OnDestroy {
     // Head
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 14), this.MAT.skin);
     head.position.y = 2.02; head.castShadow = true; n.add(head);
+    if (coatMat === this.MAT.coat) this.newtonHeadMesh = head;
 
     // ── Face ────────────────────────────────────────────────────────────
     const headY = 2.02;
@@ -549,6 +583,7 @@ export class EngineService implements OnDestroy {
     // Wig
     const wig = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), this.MAT.wig);
     wig.scale.set(1.15, 0.95, 1.05); wig.position.set(0, 2.08, -0.04); n.add(wig);
+    if (coatMat === this.MAT.coat) this.newtonWigMesh = wig;
 
     [-0.33, 0.33].forEach(x => {
       const curl = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), this.MAT.wig);
@@ -558,8 +593,10 @@ export class EngineService implements OnDestroy {
     // Hat
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.38, 0.07, 14), this.MAT.hat);
     brim.position.y = 2.35; n.add(brim);
+    if (coatMat === this.MAT.coat) this.newtonHatBrim = brim;
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.26, 0.48, 14), this.MAT.hat);
     crown.position.y = 2.63; n.add(crown);
+    if (coatMat === this.MAT.coat) this.newtonHatCrown = crown;
 
     return n;
   }
@@ -596,6 +633,37 @@ export class EngineService implements OnDestroy {
     return g;
   }
 
+  private makeSuperAppleMesh(): THREE.Group {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.44, 12, 10), this.MAT.superApple);
+    body.castShadow = true; g.add(body);
+    const indent = new THREE.Mesh(new THREE.SphereGeometry(0.13, 6, 6), new THREE.MeshLambertMaterial({ color: 0xcc3300 }));
+    indent.position.y = 0.40; g.add(indent);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 5), this.MAT.stem);
+    stem.position.y = 0.62; g.add(stem);
+    const leafGeo = new THREE.SphereGeometry(0.18, 6, 5); leafGeo.scale(1.8, 0.5, 1);
+    const leaf = new THREE.Mesh(leafGeo, this.MAT.appleGreen);
+    leaf.position.set(0.22, 0.75, 0); leaf.rotation.z = 0.3; g.add(leaf);
+    return g;
+  }
+
+  private makeGoldenAppleMesh(): THREE.Group {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), this.MAT.goldenApple);
+    body.castShadow = true; g.add(body);
+    const indent = new THREE.Mesh(new THREE.SphereGeometry(0.10, 6, 6), new THREE.MeshLambertMaterial({ color: 0xdaa520 }));
+    indent.position.y = 0.32; g.add(indent);
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.28, 5), this.MAT.stem);
+    stem.position.y = 0.50; g.add(stem);
+    const leafGeo = new THREE.SphereGeometry(0.15, 6, 5); leafGeo.scale(1.8, 0.5, 1);
+    const leaf = new THREE.Mesh(leafGeo, this.MAT.goldenApple);
+    leaf.position.set(0.18, 0.62, 0); leaf.rotation.z = 0.3; g.add(leaf);
+    // Halo ring
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.50, 0.04, 6, 16), this.MAT.goldenApple);
+    ring.rotation.x = Math.PI / 2; g.add(ring);
+    return g;
+  }
+
   // Floating name label using a Canvas texture
   private createNameSprite(name: string): THREE.Sprite {
     const canvas = document.createElement('canvas');
@@ -624,8 +692,20 @@ export class EngineService implements OnDestroy {
     if (this.multiplayerMode) return;
     const tip = this.branchTips[Math.floor(Math.random() * this.branchTips.length)];
     const wave = this.gameState.wave();
-    const isAnvil = Math.random() < Math.min(0.08 + wave * 0.04, 0.32);
-    const mesh = isAnvil ? this.makeAnvilMesh() : this.makeAppleMesh();
+    const rand = Math.random();
+    const anvilChance  = Math.min(0.08 + wave * 0.04, 0.32);
+    const goldenChance = 0.01;
+    const superChance  = 0.05;
+    let type: FallingObject['type'];
+    if      (rand < anvilChance)                              type = 'anvil';
+    else if (rand < anvilChance + goldenChance)               type = 'golden-apple';
+    else if (rand < anvilChance + goldenChance + superChance) type = 'super-apple';
+    else                                                      type = 'apple';
+
+    const mesh = type === 'anvil'        ? this.makeAnvilMesh()
+               : type === 'super-apple'  ? this.makeSuperAppleMesh()
+               : type === 'golden-apple' ? this.makeGoldenAppleMesh()
+               : this.makeAppleMesh();
     mesh.position.set(
       tip.x + (Math.random()-0.5) * 2.5,
       tip.y + 0.5,
@@ -635,8 +715,7 @@ export class EngineService implements OnDestroy {
     this.scene.add(mesh);
     this.fallingObjects.push({
       id: `local-${Date.now()}-${Math.random()}`,
-      mesh,
-      type: isAnvil ? 'anvil' : 'apple',
+      mesh, type,
       speed: (3.5 + wave * 0.4) + Math.random() * 1.5,
       checked: false,
       network: false
@@ -681,6 +760,7 @@ export class EngineService implements OnDestroy {
     }
 
     this.updatePlayerMovement(delta);
+    this.updatePowerUpTimers(delta);
     this.animateNewtonIdle(this.playerVelX, this.playerVelZ);
     this.updateFallingObjects(delta);
     if (!this.multiplayerMode) {
@@ -759,7 +839,8 @@ export class EngineService implements OnDestroy {
 
     // ── Horizontal movement ────────────────────────────────────────────
     const baseSpeed = 6.5 * this.gameState.moveSpeedMultiplier();
-    const speed = wantSprint ? baseSpeed * this.gameState.sprintSpeedMultiplier() : baseSpeed;
+    let speed = wantSprint ? baseSpeed * this.gameState.sprintSpeedMultiplier() : baseSpeed;
+    if (this.speedBoostTimer > 0) speed *= 1.8;
     let fwd = 0, str = 0;
 
     if (this.keysHeld.has('w') || this.keysHeld.has('arrowup'))    fwd += 1;
@@ -783,11 +864,13 @@ export class EngineService implements OnDestroy {
     this.playerZ = Math.max(this.PLAYER_MIN_Z, Math.min(this.PLAYER_MAX_Z, this.playerZ + this.playerVelZ * delta));
 
     // ── Trunk collision ────────────────────────────────────────────────
-    const txDist = Math.sqrt(this.playerX * this.playerX + (this.playerZ + 2) * (this.playerZ + 2));
-    if (txDist < this.trunkRadius && txDist > 0.001) {
-      const angle = Math.atan2(this.playerX, this.playerZ + 2);
-      this.playerX = Math.sin(angle) * this.trunkRadius;
-      this.playerZ = Math.cos(angle) * this.trunkRadius - 2;
+    for (const trunk of this.trunkPositions) {
+      const txDist = Math.sqrt((this.playerX - trunk.x) ** 2 + (this.playerZ - trunk.z) ** 2);
+      if (txDist < trunk.r && txDist > 0.001) {
+        const angle = Math.atan2(this.playerX - trunk.x, this.playerZ - trunk.z);
+        this.playerX = Math.sin(angle) * trunk.r + trunk.x;
+        this.playerZ = Math.cos(angle) * trunk.r + trunk.z;
+      }
     }
 
     // ── Jump / gravity ─────────────────────────────────────────────────
@@ -848,22 +931,33 @@ export class EngineService implements OnDestroy {
         obj.checked = true;
         const dx = Math.abs(obj.mesh.position.x - this.playerX);
         const dz = Math.abs(obj.mesh.position.z - this.playerZ);
-        const hr = obj.type === 'apple' ? 0.90 : 1.15;
+        const baseHr = obj.type === 'anvil' ? 1.15 : 0.90;
+        const hr = baseHr + (this.bigHeadTimer > 0 ? 0.6 : 0);
 
         if (dx < hr && dz < hr) {
           const hitPos = new THREE.Vector3(this.playerX, this.PLAYER_Y_CENTER, this.playerZ);
 
+          // Engine-level effects apply regardless of solo/multi
+          if (obj.type === 'super-apple')  { this.speedBoostTimer = 30; }
+          if (obj.type === 'golden-apple') { this.bigHeadTimer = 30; this.applyHeadScale(1.7); }
+
           if (this.multiplayerMode) {
-            // In multiplayer emit event; game component handles server comms
-            const newIq = obj.type === 'apple'
-              ? this.gameState.iq() + this.gameState.iqPerApple()
-              : Math.max(0, this.gameState.iq() - 25);
+            let newIq: number;
+            if      (obj.type === 'apple')        newIq = this.gameState.iq() + this.gameState.iqPerApple();
+            else if (obj.type === 'super-apple')  newIq = this.gameState.iq() + this.gameState.iqPerSuperApple();
+            else if (obj.type === 'golden-apple') newIq = this.gameState.iq() * 2;
+            else                                  newIq = Math.max(0, this.gameState.iq() - 25);
             this.ngZone.run(() => this.catchEvent$.next({ objectId: obj.id, type: obj.type, newIq }));
           } else {
-            // Solo: apply directly
             if (obj.type === 'apple') {
               this.ngZone.run(() => this.gameState.collectApple());
               this.spawnCollectParticles(hitPos, 0xff3333, 10);
+            } else if (obj.type === 'super-apple') {
+              this.ngZone.run(() => this.gameState.collectSuperApple());
+              this.spawnCollectParticles(hitPos, 0xff6600, 15);
+            } else if (obj.type === 'golden-apple') {
+              this.ngZone.run(() => this.gameState.doubleIq());
+              this.spawnCollectParticles(hitPos, 0xffd700, 20);
             } else {
               this.ngZone.run(() => this.gameState.hitByAnvil());
               this.triggerCameraShake(0.5);
@@ -901,7 +995,7 @@ export class EngineService implements OnDestroy {
     const r = this.gameState.magnetRadius();
     if (r === 0) return;
     for (const obj of this.fallingObjects) {
-      if (obj.type !== 'apple') continue;
+      if (obj.type === 'anvil') continue;
       const dx = this.playerX - obj.mesh.position.x, dz = this.playerZ - obj.mesh.position.z;
       const d = Math.sqrt(dx*dx + dz*dz);
       if (d < r && d > 0.1) {
@@ -929,10 +1023,26 @@ export class EngineService implements OnDestroy {
   }
 
   private animateTreeSway(): void {
-    if (!this.treeGroup) return;
     const t = this.clock.elapsedTime;
-    this.treeGroup.rotation.z = Math.sin(t * 0.35) * 0.008;
-    this.treeGroup.rotation.x = Math.sin(t * 0.25 + 1) * 0.004;
+    this.trees.forEach((tree, i) => {
+      tree.rotation.z = Math.sin(t * 0.35 + i * 0.5) * 0.008;
+      tree.rotation.x = Math.sin(t * 0.25 + 1 + i * 0.3) * 0.004;
+    });
+  }
+
+  private applyHeadScale(s: number): void {
+    if (this.newtonHeadMesh) this.newtonHeadMesh.scale.setScalar(s);
+    if (this.newtonWigMesh)  this.newtonWigMesh.scale.set(1.15 * s, 0.95 * s, 1.05 * s);
+    if (this.newtonHatBrim)  this.newtonHatBrim.scale.setScalar(s);
+    if (this.newtonHatCrown) this.newtonHatCrown.scale.setScalar(s);
+  }
+
+  private updatePowerUpTimers(delta: number): void {
+    if (this.speedBoostTimer > 0) this.speedBoostTimer -= delta;
+    if (this.bigHeadTimer > 0) {
+      this.bigHeadTimer -= delta;
+      if (this.bigHeadTimer <= 0) { this.bigHeadTimer = 0; this.applyHeadScale(1.0); }
+    }
   }
 
   private setupResizeHandler(canvas: HTMLCanvasElement): void {

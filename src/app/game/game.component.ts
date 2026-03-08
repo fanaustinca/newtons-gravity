@@ -22,6 +22,17 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
     <div class="game-wrapper">
       <canvas #gameCanvas class="game-canvas" (click)="requestPointerLock()"></canvas>
 
+      <!-- "Click to look" overlay — rendered before ui-layer so buttons stay on top -->
+      @if (gameState.status() === 'playing' && !pointerLocked()) {
+        <div class="click-overlay" (click)="requestPointerLock()">
+          <div class="click-hint">
+            <div class="click-icon">🖱️</div>
+            <div>Click to control camera</div>
+            <div class="click-sub">WASD / Arrow keys to move · ESC to release</div>
+          </div>
+        </div>
+      }
+
       <div class="ui-layer">
         @if (gameState.status() === 'playing') {
           <app-hud />
@@ -42,17 +53,6 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
           <button class="disconnect-btn" (click)="exitToMenu.emit()">✕ Leave Game</button>
         }
       </div>
-
-      <!-- "Click to look" overlay -->
-      @if (gameState.status() === 'playing' && !pointerLocked()) {
-        <div class="click-overlay" (click)="requestPointerLock()">
-          <div class="click-hint">
-            <div class="click-icon">🖱️</div>
-            <div>Click to control camera</div>
-            <div class="click-sub">WASD / Arrow keys to move · ESC to release</div>
-          </div>
-        </div>
-      }
 
       <!-- Touch D-pad -->
       @if (gameState.status() === 'playing') {
@@ -258,11 +258,10 @@ export class GameComponent implements AfterViewInit, OnDestroy {
     // Local catch events → report to server + optimistic local update
     this.subs.add(this.engine.catchEvent$.subscribe(event => {
       this.mp.reportCatch(event.objectId, event.type, event.newIq);
-      if (event.type === 'apple') {
-        this.gameState.collectApple();
-      } else {
-        this.gameState.hitByAnvilMultiplayer();
-      }
+      if (event.type === 'apple')              this.gameState.collectApple();
+      else if (event.type === 'super-apple')   this.gameState.collectSuperApple();
+      else if (event.type === 'golden-apple')  this.gameState.doubleIq();
+      else                                     this.gameState.hitByAnvilMultiplayer();
     }));
 
     // Game ended after wave 20

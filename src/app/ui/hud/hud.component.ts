@@ -102,7 +102,7 @@ import { AppStateService } from '../../services/app-state.service';
     }
     .heart.full { color: #e83030; }
     .heart.empty { color: rgba(200,60,60,0.3); }
-    .sprint-block { min-width: 80px; }
+    .sprint-block { min-width: 80px; margin-top: 38px; }
     .stamina-bar {
       width: 80px; height: 8px;
       background: rgba(255,255,255,0.15);

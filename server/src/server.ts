@@ -41,7 +41,7 @@ interface RoomPlayer {
 
 interface GameObject {
   id: string;
-  type: 'apple' | 'anvil';
+  type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple';
   x: number;
   y: number;
   z: number;
@@ -99,13 +99,20 @@ async function loadRegisteredUsers(): Promise<void> {
 loadRegisteredUsers().catch(err => console.error('[firestore] load error:', err));
 
 // ── Branch tips for server-side spawn positions ────────────────────────────
-
-const BRANCH_TIPS = [
-  [-10.5, 16.0, -2.0], [-8.0, 19.5, -1.5], [-5.5, 22.0, -3.0],
-  [-2.0,  23.5, -2.0], [ 0.0, 24.5, -2.5], [ 2.0, 23.5, -1.5],
-  [ 5.5,  22.0, -1.5], [ 8.0, 19.5, -2.5], [10.5, 16.0, -2.0],
-  [-6.0,  18.0,  0.5], [ 6.0, 18.0,  0.5], [ 0.0, 20.0,  1.0],
-  [-3.5,  20.0, -4.0], [ 3.5, 20.0, -4.0], [ 0.0, 16.5, -4.5],
+// 3 trees at x=0,-50,+50; treeScale=2.0; world = local*2 + treeOffset
+const BRANCH_TIPS: [number, number, number][] = [
+  // Tree 1 (center, offset 0,0,-2)
+  [-21,32,-6],[-16,39,-5],[-11,44,-8],[-4,47,-6],[0,49,-7],[4,47,-5],
+  [11,44,-5],[16,39,-7],[21,32,-6],[-12,36,-1],[12,36,-1],[0,40,0],
+  [-7,40,-10],[7,40,-10],[0,33,-11],
+  // Tree 2 (left, offset -50,0,-2)
+  [-71,32,-6],[-66,39,-5],[-61,44,-8],[-54,47,-6],[-50,49,-7],[-46,47,-5],
+  [-39,44,-5],[-34,39,-7],[-29,32,-6],[-62,36,-1],[-38,36,-1],[-50,40,0],
+  [-57,40,-10],[-43,40,-10],[-50,33,-11],
+  // Tree 3 (right, offset +50,0,-2)
+  [29,32,-6],[34,39,-5],[39,44,-8],[46,47,-6],[50,49,-7],[54,47,-5],
+  [61,44,-5],[66,39,-7],[71,32,-6],[38,36,-1],[62,36,-1],[50,40,0],
+  [43,40,-10],[57,40,-10],[50,33,-11],
 ];
 
 // ── Auth helpers ───────────────────────────────────────────────────────────
@@ -321,7 +328,7 @@ io.on('connection', (socket: Socket) => {
     socket.to(room.id).emit('player:moved', { socketId: socket.id, x, z, yaw });
   });
 
-  socket.on('player:catch', ({ objectId, type, newIq }: { objectId: string; type: 'apple' | 'anvil'; newIq: number }) => {
+  socket.on('player:catch', ({ objectId, type, newIq }: { objectId: string; type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple'; newIq: number }) => {
     const room = findPlayerRoom(socket.id);
     if (!room || room.status !== 'playing') return;
     if (!room.objects.has(objectId)) return; // already caught
@@ -330,13 +337,11 @@ io.on('connection', (socket: Socket) => {
     const p = room.players.get(socket.id);
     if (!p) return;
 
-    if (type === 'apple') {
-      const mult = 1 + p.upgrades.iqMultiplierLevel * 0.5;
-      p.iq = Math.round(p.iq + 10 * mult);
-    } else {
-      // Anvil in multiplayer = lose IQ
-      p.iq = Math.max(0, p.iq - 25);
-    }
+    const mult = 1 + p.upgrades.iqMultiplierLevel * 0.5;
+    if      (type === 'apple')        p.iq = Math.round(p.iq + 10 * mult);
+    else if (type === 'super-apple')  p.iq = Math.round(p.iq + 50 * mult);
+    else if (type === 'golden-apple') p.iq = Math.round(p.iq * 2);
+    else                              p.iq = Math.max(0, p.iq - 25);
 
     io.to(room.id).emit('game:objectCaught', { objectId, catcherSocketId: socket.id });
     io.to(room.id).emit('player:score', { socketId: socket.id, iq: p.iq });
@@ -438,8 +443,13 @@ function startWave(room: Room, srv: Server): void {
 function spawnObject(room: Room, srv: Server): void {
   if (room.status !== 'playing') return;
   const [tx, ty, tz] = BRANCH_TIPS[Math.floor(Math.random() * BRANCH_TIPS.length)];
-  const anvilChance = Math.min(0.08 + room.wave * 0.04, 0.32);
-  const type: 'apple' | 'anvil' = Math.random() < anvilChance ? 'anvil' : 'apple';
+  const anvilChance  = Math.min(0.08 + room.wave * 0.04, 0.32);
+  const rand = Math.random();
+  const type: GameObject['type'] =
+    rand < anvilChance                              ? 'anvil' :
+    rand < anvilChance + 0.01                       ? 'golden-apple' :
+    rand < anvilChance + 0.01 + 0.05               ? 'super-apple' :
+                                                      'apple';
   const obj: GameObject = {
     id: uuid(),
     type,

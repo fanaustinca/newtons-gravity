@@ -38,7 +38,7 @@ export interface WaveScore {
 
 export interface SpawnedObject {
   id: string;
-  type: 'apple' | 'anvil';
+  type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple';
   x: number; y: number; z: number;
   speed: number;
 }
@@ -187,7 +187,7 @@ export class MultiplayerService {
     this.socket?.volatile.emit('player:move', { x, z, yaw });
   }
 
-  reportCatch(objectId: string, type: 'apple' | 'anvil', newIq: number): void {
+  reportCatch(objectId: string, type: 'apple' | 'anvil' | 'super-apple' | 'golden-apple', newIq: number): void {
     this.socket?.emit('player:catch', { objectId, type, newIq });
   }
 
