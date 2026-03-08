@@ -78,6 +78,7 @@ const MIN_PLAYERS      = 2;
 
 admin.initializeApp();
 const db = admin.firestore();
+db.settings({ databaseId: 'newton' });
 
 // ── In-memory stores ───────────────────────────────────────────────────────
 
