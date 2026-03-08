@@ -19,7 +19,7 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
   standalone: true,
   imports: [CommonModule, HudComponent, UpgradeComponent, GameOverComponent, ScoreboardComponent],
   template: `
-    <div class="game-wrapper">
+    <div class="game-wrapper" (click)="requestPointerLock()">
       <canvas #gameCanvas class="game-canvas" (click)="requestPointerLock()"></canvas>
 
       <!-- "Click to look" overlay — rendered before ui-layer so buttons stay on top -->
@@ -312,7 +312,7 @@ export class GameComponent implements AfterViewInit, OnDestroy {
   }
 
   requestPointerLock(): void {
-    if (this.gameState.status() === 'playing') {
+    if (this.gameState.status() === 'playing' && !this.pointerLocked()) {
       this.canvasRef.nativeElement.requestPointerLock();
     }
   }
