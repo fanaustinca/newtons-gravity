@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, inject } from '@angular/core';
+import { Component, Output, EventEmitter, inject, signal, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GameStateService } from '../../game/game-state.service';
 import { AuthService } from '../../services/auth.service';
@@ -48,8 +48,8 @@ import { AuthService } from '../../services/auth.service';
         </div>
 
         <div class="action-row">
-          <button class="restart-btn" (click)="restart.emit()">Try Again</button>
-          <button class="menu-btn" (click)="exitToMenu.emit()">Main Menu</button>
+          <button class="restart-btn" (click)="onRestart()">Try Again</button>
+          <button class="menu-btn" (click)="exitToMenu.emit()">Main Menu ({{ countdown() }})</button>
         </div>
       </div>
     </div>
@@ -182,8 +182,29 @@ import { AuthService } from '../../services/auth.service';
     .menu-btn:hover { border-color: rgba(200,160,40,.7); color: #f5e8c0; }
   `]
 })
-export class GameOverComponent {
+export class GameOverComponent implements OnInit, OnDestroy {
   @Output() restart     = new EventEmitter<void>();
   @Output() exitToMenu  = new EventEmitter<void>();
   readonly gs = inject(GameStateService);
+
+  readonly countdown = signal(5);
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  ngOnInit(): void {
+    this.timer = setInterval(() => {
+      const next = this.countdown() - 1;
+      this.countdown.set(next);
+      if (next <= 0) this.exitToMenu.emit();
+    }, 1000);
+  }
+
+  ngOnDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  onRestart(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.restart.emit();
+  }
 }
