@@ -112,6 +112,7 @@ export class EngineService implements OnDestroy {
   private keysHeld   = new Set<string>();
   private touchDirX  = 0;
   private touchDirZ  = 0;
+  private touchSprint = false;
 
   // Multiplayer mode
   multiplayerMode = false;
@@ -240,6 +241,8 @@ export class EngineService implements OnDestroy {
   }
 
   setTouchDir(x: number, z: number): void { this.touchDirX = x; this.touchDirZ = z; }
+  setTouchSprint(active: boolean): void { this.touchSprint = active; }
+  touchCameraDelta(dx: number, dy: number): void { this.cameraMouseDelta(dx * 2, dy * 2); }
 
   // Called by game component on wave start
   onWaveStart(): void {
@@ -254,6 +257,7 @@ export class EngineService implements OnDestroy {
     this.isGrounded = true;
     this.sprintStaminaVal = 1.0;
     this.sprintCooldownActive = false;
+    this.touchSprint = false;
     this.speedBoostTimer = 0;
     this.bigHeadTimer = 0;
     this.applyHeadScale(1.0);
@@ -814,7 +818,7 @@ export class EngineService implements OnDestroy {
 
   private updatePlayerMovement(delta: number): void {
     // ── Sprint stamina ─────────────────────────────────────────────────
-    const wantSprint = this.keysHeld.has('shift') && !this.sprintCooldownActive && this.sprintStaminaVal > 0;
+    const wantSprint = (this.keysHeld.has('shift') || this.touchSprint) && !this.sprintCooldownActive && this.sprintStaminaVal > 0;
     if (wantSprint) {
       this.sprintStaminaVal -= delta / this.gameState.sprintDuration();
       if (this.sprintStaminaVal <= 0) {

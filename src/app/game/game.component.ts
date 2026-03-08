@@ -54,8 +54,17 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
         }
       </div>
 
-      <!-- Touch D-pad -->
+      <!-- Touch controls -->
       @if (gameState.status() === 'playing') {
+        <!-- Camera zone (right half) -->
+        <div class="cam-zone"
+             (touchstart)="camTouchStart($event)"
+             (touchmove)="camTouchMove($event)"
+             (touchend)="camTouchEnd($event)"
+             (touchcancel)="camTouchEnd($event)">
+        </div>
+
+        <!-- D-pad -->
         <div class="dpad"
              (touchstart)="dpadTouchStart($event)"
              (touchmove)="dpadTouchMove($event)"
@@ -66,6 +75,14 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
           <div class="dpad-btn dpad-right">▶</div>
           <div class="dpad-btn dpad-down">▼</div>
           <div class="dpad-center"></div>
+        </div>
+
+        <!-- Sprint button -->
+        <div class="sprint-touch-btn" [class.active]="sprintActive()"
+             (touchstart)="sprintTouchStart($event)"
+             (touchend)="sprintTouchEnd($event)"
+             (touchcancel)="sprintTouchEnd($event)">
+          💨
         </div>
       }
     </div>
@@ -122,6 +139,19 @@ import { ScoreboardComponent } from '../ui/scoreboard/scoreboard.component';
     .dpad-center{ grid-column: 2; grid-row: 2; }
     .dpad-right { grid-column: 3; grid-row: 2; }
     .dpad-down  { grid-column: 2; grid-row: 3; }
+    .cam-zone {
+      position: absolute; right: 0; top: 0;
+      width: 50%; height: 100%; touch-action: none;
+    }
+    .sprint-touch-btn {
+      position: absolute; bottom: 28px; left: 172px;
+      width: 60px; height: 60px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.2);
+      border-radius: 50%; font-size: 1.4rem; touch-action: none; user-select: none;
+      transition: background .1s;
+    }
+    .sprint-touch-btn.active { background: rgba(79,195,247,.35); border-color: rgba(79,195,247,.6); }
   `]
 })
 export class GameComponent implements AfterViewInit, OnDestroy {
@@ -150,6 +180,11 @@ export class GameComponent implements AfterViewInit, OnDestroy {
 
   private dpadOriginX = 0;
   private dpadOriginY = 0;
+
+  private camTouchId: number | null = null;
+  private camLastX = 0;
+  private camLastY = 0;
+  readonly sprintActive = signal(false);
 
   constructor() {
     // Trigger engine wave reset whenever status becomes 'playing'
@@ -321,6 +356,47 @@ export class GameComponent implements AfterViewInit, OnDestroy {
   dpadTouchEnd(e: TouchEvent): void {
     e.preventDefault();
     this.engine.setTouchDir(0, 0);
+  }
+
+  camTouchStart(e: TouchEvent): void {
+    e.preventDefault();
+    if (this.camTouchId !== null) return;
+    const t = e.changedTouches[0];
+    this.camTouchId = t.identifier;
+    this.camLastX = t.clientX;
+    this.camLastY = t.clientY;
+  }
+
+  camTouchMove(e: TouchEvent): void {
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== this.camTouchId) continue;
+      this.engine.touchCameraDelta(t.clientX - this.camLastX, t.clientY - this.camLastY);
+      this.camLastX = t.clientX;
+      this.camLastY = t.clientY;
+    }
+  }
+
+  camTouchEnd(e: TouchEvent): void {
+    e.preventDefault();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === this.camTouchId) {
+        this.camTouchId = null;
+      }
+    }
+  }
+
+  sprintTouchStart(e: TouchEvent): void {
+    e.preventDefault();
+    this.sprintActive.set(true);
+    this.engine.setTouchSprint(true);
+  }
+
+  sprintTouchEnd(e: TouchEvent): void {
+    e.preventDefault();
+    this.sprintActive.set(false);
+    this.engine.setTouchSprint(false);
   }
 
   private dpadUpdate(cx: number, cy: number): void {
