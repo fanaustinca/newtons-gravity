@@ -1,0 +1,24 @@
+{
+  "name": "Newton's Gravity",
+  "short_name": "Newton's Gravity",
+  "description": "Catch apples falling from Newton's tree before the anvils squash you!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a0a00",
+  "theme_color": "#1a0a00",
+  "orientation": "landscape",
+  "icons": [
+    {
+      "src": "assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

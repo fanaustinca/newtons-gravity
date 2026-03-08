@@ -1,6 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import {
-  signInWithPopup, GoogleAuthProvider, signInAnonymously,
+  signInWithPopup, signInWithRedirect, getRedirectResult,
+  GoogleAuthProvider, signInAnonymously,
   signOut, onAuthStateChanged, User as FirebaseUser
 } from 'firebase/auth';
 import { firebaseAuth } from './firebase';
@@ -20,6 +21,13 @@ export class AuthService {
   readonly user = signal<AuthUser | null>(null);
 
   constructor() {
+    // Handle redirect result (mobile Google Sign-In)
+    getRedirectResult(firebaseAuth).then(async (result) => {
+      if (result?.user) {
+        await this.syncUser(result.user);
+      }
+    }).catch(() => {});
+
     // Restore session if Firebase still has a logged-in user
     onAuthStateChanged(firebaseAuth, async (fbUser) => {
       if (fbUser && !this.user()) {
@@ -28,11 +36,20 @@ export class AuthService {
     });
   }
 
-  /** Sign in with Google popup */
+  private isMobile(): boolean {
+    return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  /** Sign in with Google popup (desktop) or redirect (mobile) */
   async loginWithGoogle(): Promise<void> {
     const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(firebaseAuth, provider);
-    await this.syncUser(result.user);
+    if (this.isMobile()) {
+      await signInWithRedirect(firebaseAuth, provider);
+      // Page will redirect; result handled in constructor via getRedirectResult
+    } else {
+      const result = await signInWithPopup(firebaseAuth, provider);
+      await this.syncUser(result.user);
+    }
   }
 
   /** Play as guest (Firebase anonymous auth) */
